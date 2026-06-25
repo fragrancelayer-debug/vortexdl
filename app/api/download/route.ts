@@ -13,8 +13,6 @@ async function getYtDlpPath(): Promise<string> {
     '/usr/local/bin/yt-dlp',
     '/usr/bin/yt-dlp',
     '/root/.local/bin/yt-dlp',
-    '/home/user/.local/bin/yt-dlp',
-    '/nix/var/nix/profiles/default/bin/yt-dlp',
   ];
   for (const p of candidates) {
     try {
@@ -22,7 +20,7 @@ async function getYtDlpPath(): Promise<string> {
       return p;
     } catch {}
   }
-  throw new Error('yt-dlp not found on this server');
+  throw new Error('yt-dlp not found');
 }
 
 const FORMATS: Record<string, string> = {
@@ -37,37 +35,46 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url');
   const quality = searchParams.get('quality') ?? '720p';
-  if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 });
+
+  if (!url) {
+    return NextResponse.json({ error: 'URL required' }, { status: 400 });
+  }
 
   const isAudio = quality === 'audio';
   const ext = isAudio ? 'mp3' : 'mp4';
+  const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
 
+  let ytdlp: string;
   try {
-    const ytdlp = await getYtDlpPath();
-    const stream = new ReadableStream({
-      start(controller) {
-const proc = spawn(ytdlp, [
-  '--no-playlist','--no-warnings',
-  '--cookies','/app/cookies.txt',
-  '-f', FORMATS[quality] ?? FORMATS['720p'],
-  '--merge-output-format', ext,
-  '-o', '-', url,
-]);
-        proc.stdout.on('data', (chunk: Buffer) => controller.enqueue(chunk));
-        proc.stderr.on('data', (d: Buffer) => console.error('[yt-dlp]', d.toString()));
-        proc.on('close', (code) => code !== 0 ? controller.error(new Error(`Exit ${code}`)) : controller.close());
-        proc.on('error', (e) => controller.error(e));
-      },
-    });
-
-    return new NextResponse(stream, {
-      headers: {
-        'Content-Type': isAudio ? 'audio/mpeg' : 'video/mp4',
-        'Content-Disposition': `attachment; filename="vortexdl-${quality}.${ext}"`,
-        'Transfer-Encoding': 'chunked',
-      },
-    });
+    ytdlp = await getYtDlpPath();
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
-}
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const proc = spawn(ytdlp, [
+        '--no-playlist',
+        '--no-warnings',
+        '--cookies', '/app/cookies.txt',
+        '-f', FORMATS[quality] ?? FORMATS['720p'],
+        '--merge-output-format', ext,
+        '-o', '-',
+        url,
+      ]);
+
+      proc.stdout.on('data', (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk));
+      });
+
+      proc.stderr.on('data', (d: Buffer) => {
+        console.error('[yt-dlp]', d.toString());
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          controller.error(new Error(`yt-dlp exited with code ${code}`));
+        } else {
+          controller.close();
+        }
+      });
