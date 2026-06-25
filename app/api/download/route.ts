@@ -46,12 +46,13 @@ export async function GET(req: NextRequest) {
     const ytdlp = await getYtDlpPath();
     const stream = new ReadableStream({
       start(controller) {
-        const proc = spawn(ytdlp, [
-          '--no-playlist','--no-warnings',
-          '-f', FORMATS[quality] ?? FORMATS['720p'],
-          '--merge-output-format', ext,
-          '-o', '-', url,
-        ]);
+const proc = spawn(ytdlp, [
+  '--no-playlist','--no-warnings',
+  '--cookies','/app/cookies.txt',
+  '-f', FORMATS[quality] ?? FORMATS['720p'],
+  '--merge-output-format', ext,
+  '-o', '-', url,
+]);
         proc.stdout.on('data', (chunk: Buffer) => controller.enqueue(chunk));
         proc.stderr.on('data', (d: Buffer) => console.error('[yt-dlp]', d.toString()));
         proc.on('close', (code) => code !== 0 ? controller.error(new Error(`Exit ${code}`)) : controller.close());
