@@ -5,6 +5,25 @@ import { promisify } from 'util';
 export const runtime = 'nodejs';
 const execFileAsync = promisify(execFile);
 
+// Find yt-dlp wherever it may be installed
+async function getYtDlpPath(): Promise<string> {
+  const candidates = [
+    'yt-dlp',
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+    '/root/.local/bin/yt-dlp',
+    '/home/user/.local/bin/yt-dlp',
+    '/nix/var/nix/profiles/default/bin/yt-dlp',
+  ];
+  for (const p of candidates) {
+    try {
+      await execFileAsync(p, ['--version']);
+      return p;
+    } catch {}
+  }
+  throw new Error('yt-dlp not found on this server');
+}
+
 function detectPlatform(url: string) {
   if (/youtube\.com|youtu\.be/.test(url)) return 'youtube';
   if (/instagram\.com/.test(url)) return 'instagram';
@@ -36,8 +55,9 @@ export async function POST(req: NextRequest) {
   try {
     const { url } = await req.json();
     if (!url) return NextResponse.json({ success: false, error: 'URL required' }, { status: 400 });
-    new URL(url); // validate
-    const { stdout } = await execFileAsync('yt-dlp', ['--dump-json','--no-playlist','--no-warnings', url]);
+    new URL(url);
+    const ytdlp = await getYtDlpPath();
+    const { stdout } = await execFileAsync(ytdlp, ['--dump-json','--no-playlist','--no-warnings', url]);
     const r = JSON.parse(stdout);
     return NextResponse.json({
       success: true,
