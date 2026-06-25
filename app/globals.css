@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --neon: #39ff14;
+  --neon-dim: #22991a;
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --border: #222222;
+  --text: #e8e8e8;
+  --muted: #666666;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  margin: 0;
+}
+
+.font-display { font-family: 'Unbounded', sans-serif; }
+
+.neon-border {
+  border: 1px solid var(--neon-dim);
+  box-shadow: 0 0 12px rgba(57, 255, 20, 0.08);
+}
+
+.neon-border:focus-within {
+  border-color: var(--neon);
+  box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
+}
+
+.neon-btn {
+  background: var(--neon);
+  color: #000;
+  font-family: 'Unbounded', sans-serif;
+  font-weight: 700;
+  transition: all 0.15s ease;
+}
+
+.neon-btn:hover:not(:disabled) {
+  background: #fff;
+  box-shadow: 0 0 24px rgba(57, 255, 20, 0.5);
+}
+
+.neon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quality-btn {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.quality-btn:hover {
+  border-color: var(--neon-dim);
+  color: var(--neon);
+}
+
+.quality-btn.active {
+  border-color: var(--neon);
+  color: var(--neon);
+  background: rgba(57, 255, 20, 0.08);
+}
