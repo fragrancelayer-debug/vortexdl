@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     if (!url) return NextResponse.json({ success: false, error: 'URL required' }, { status: 400 });
     new URL(url);
     const ytdlp = await getYtDlpPath();
-    const { stdout } = await execFileAsync(ytdlp, ['--dump-json','--no-playlist','--no-warnings', url]);
+const { stdout } = await execFileAsync(ytdlp, ['--dump-json','--no-playlist','--no-warnings','--cookies','/app/cookies.txt', url]);
     const r = JSON.parse(stdout);
     return NextResponse.json({
       success: true,
