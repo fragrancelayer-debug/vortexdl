@@ -1,9 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Shield, Info } from 'lucide-react';
-import DualNavigation from './components/DualNavigation';
-import { apiPost, getDownloadUrl } from '@/lib/api';
+import { Download, Search, Clipboard, Loader2, AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video } from 'lucide-react';
 
 type Quality = '1080p' | '720p' | '480p' | '360p' | 'audio';
 
@@ -18,10 +16,7 @@ const QUALITIES = [
 const PLATFORM_COLORS: Record<string, string> = {
   youtube: '#FF0000', instagram: '#E1306C', tiktok: '#69C9D0',
   twitter: '#1DA1F2', facebook: '#1877F2', vimeo: '#1AB7EA',
-  reddit: '#FF4500', twitch: '#9146FF',
-  pornhub: '#FF9000', xvideos: '#AE0000', xhamster: '#F5A623',
-  redtube: '#FF2626', spankbang: '#FF6B00', youporn: '#00AFF0',
-  unknown: '#39ff14',
+  reddit: '#FF4500', twitch: '#9146FF', unknown: '#39ff14',
 };
 
 export default function Home() {
@@ -37,7 +32,12 @@ export default function Home() {
     if (!url.trim()) return;
     setLoading(true); setError(''); setInfo(null);
     try {
-      const data = await apiPost<{ success: boolean; error?: string; platform?: string; is_adult?: boolean; cookies_available?: boolean; video?: any; qualities?: string[] }>('/api/info', { url: url.trim() });
+      const res = await fetch('/api/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await res.json();
       if (!data.success) throw new Error(data.error ?? 'Unknown error');
       setInfo(data);
     } catch (e: any) {
@@ -52,7 +52,7 @@ export default function Home() {
     setDownloading(true);
     const params = new URLSearchParams({ url: info.video.webpage_url, quality });
     const a = document.createElement('a');
-    a.href = getDownloadUrl(params);
+    a.href = `/api/download?${params}`;
     a.download = '';
     document.body.appendChild(a);
     a.click();
@@ -68,13 +68,7 @@ export default function Home() {
     inputRef.current?.focus();
   }
 
-  const handlePlatformSelect = (platformUrl: string) => {
-    setUrl(platformUrl);
-    inputRef.current?.focus();
-  };
-
   const platformColor = info ? (PLATFORM_COLORS[info.platform] ?? '#39ff14') : '#39ff14';
-  const isAdultSite = info?.is_adult;
 
   return (
     <main className="min-h-screen flex flex-col items-center px-4 py-12">
@@ -84,9 +78,6 @@ export default function Home() {
         </h1>
         <p className="mt-2 text-sm" style={{ color: '#666' }}>Universal Video Downloader — 1000+ platforms</p>
       </div>
-
-      {/* Dual Navigation Menu */}
-      <DualNavigation onSelectPlatform={handlePlatformSelect} />
 
       <div className="w-full max-w-2xl">
         <div className="neon-border rounded-xl flex items-center gap-2 px-4 py-3 bg-[#111]">
@@ -126,15 +117,10 @@ export default function Home() {
             <div className="relative w-full" style={{ aspectRatio: '16/9', background: '#0a0a0a' }}>
               <img src={info.video.thumbnail} alt={info.video.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)' }} />
-              <div className="absolute bottom-3 left-3 flex items-center gap-2">
+              <div className="absolute bottom-3 left-3">
                 <span style={{ color: platformColor, borderColor: platformColor, background: 'rgba(0,0,0,0.6)', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '2px 8px', borderRadius: '4px', border: '1px solid', fontFamily: 'monospace' }}>
                   {info.platform}
                 </span>
-                {isAdultSite && (
-                  <span style={{ background: 'rgba(255,107,107,0.2)', color: '#ff6b6b', fontSize: '0.6rem', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: '3px', border: '1px solid rgba(255,107,107,0.4)', fontFamily: 'monospace' }}>
-                    18+
-                  </span>
-                )}
               </div>
               {info.video.duration !== '—' && (
                 <div className="absolute bottom-3 right-3 text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.75)', color: '#fff' }}>
@@ -156,24 +142,6 @@ export default function Home() {
                 <ExternalLink size={11} />Source
               </a>
             </div>
-
-            {/* Cookies status indicator for adult sites */}
-            {isAdultSite && (
-              <div className="mt-4 flex items-center gap-2 p-2.5 rounded-lg text-xs"
-                style={{
-                  background: info.cookies_available ? 'rgba(57,255,20,0.08)' : 'rgba(255,180,60,0.08)',
-                  border: info.cookies_available ? '1px solid rgba(57,255,20,0.2)' : '1px solid rgba(255,180,60,0.2)',
-                  color: info.cookies_available ? '#39ff14' : '#ffb43c',
-                }}>
-                {info.cookies_available ? <Shield size={14} /> : <Info size={14} />}
-                <span>
-                  {info.cookies_available
-                    ? 'Cookies file detected — age verification enabled'
-                    : 'No cookies file found. Adult downloads may fail without authentication.'}
-                </span>
-              </div>
-            )}
-
             <div className="mt-5">
               <p className="text-xs mb-2" style={{ color: '#666' }}>SELECT QUALITY</p>
               <div className="flex flex-wrap gap-2">
