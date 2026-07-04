@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Youtube, Instagram, Music, Tv, Film, Globe, Shield, AlertTriangle, X, ExternalLink } from 'lucide-react';
+import { Youtube, Instagram, Music, Tv, Film, Globe, Shield, TriangleAlert as AlertTriangle, X, ExternalLink } from 'lucide-react';
 
 interface Platform {
   name: string;

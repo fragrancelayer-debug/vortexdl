@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Download, Search, Clipboard, Loader2, AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Shield, Info } from 'lucide-react';
+import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Shield, Info } from 'lucide-react';
 import DualNavigation from './components/DualNavigation';
 
 type Quality = '1080p' | '720p' | '480p' | '360p' | 'audio';
