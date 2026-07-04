@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Shield, Info } from 'lucide-react';
 import DualNavigation from './components/DualNavigation';
+import { apiPost, getDownloadUrl } from '@/lib/api';
 
 type Quality = '1080p' | '720p' | '480p' | '360p' | 'audio';
 
@@ -36,12 +37,7 @@ export default function Home() {
     if (!url.trim()) return;
     setLoading(true); setError(''); setInfo(null);
     try {
-      const res = await fetch('/api/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean; error?: string; platform?: string; is_adult?: boolean; cookies_available?: boolean; video?: any; qualities?: string[] }>('/api/info', { url: url.trim() });
       if (!data.success) throw new Error(data.error ?? 'Unknown error');
       setInfo(data);
     } catch (e: any) {
@@ -56,7 +52,7 @@ export default function Home() {
     setDownloading(true);
     const params = new URLSearchParams({ url: info.video.webpage_url, quality });
     const a = document.createElement('a');
-    a.href = `/api/download?${params}`;
+    a.href = getDownloadUrl(params);
     a.download = '';
     document.body.appendChild(a);
     a.click();

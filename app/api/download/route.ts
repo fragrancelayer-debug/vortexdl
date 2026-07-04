@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createReadStream, unlink, statSync, existsSync } from 'fs';
+import { getCorsHeaders, handleOptions } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -125,20 +126,29 @@ function parseYtDlpError(error: string): string {
   return `Download failed: ${error.slice(0, 100)}`;
 }
 
+// Handle CORS preflight requests
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin');
+  return handleOptions(origin);
+}
+
 export async function GET(req: NextRequest) {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url');
   const quality = searchParams.get('quality') ?? '720p';
 
   if (!url) {
-    return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+    return NextResponse.json({ error: 'URL is required' }, { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   }
 
   // Validate URL
   try {
     new URL(url);
   } catch {
-    return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid URL format' }, { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   }
 
   const isAudio = quality === 'audio';
@@ -239,12 +249,13 @@ export async function GET(req: NextRequest) {
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': String(fileSize),
         'Cache-Control': 'no-cache',
+        ...corsHeaders,
       },
     });
 
   } catch (e: any) {
     console.error('[/api/download] Error:', e.message);
     const errorMessage = parseYtDlpError(e.message || 'Unknown error');
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: errorMessage }, { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   }
 }

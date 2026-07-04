@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
+import { getCorsHeaders, jsonHeaders, handleOptions } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 const execFileAsync = promisify(execFile);
@@ -145,18 +146,26 @@ function parseYtDlpError(error: string): string {
   return `Failed to fetch video info: ${error.slice(0, 100)}`;
 }
 
+// Handle CORS preflight requests
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin');
+  return handleOptions(origin);
+}
+
 export async function POST(req: NextRequest) {
+  const origin = req.headers.get('origin');
+
   try {
     const { url } = await req.json();
     if (!url) {
-      return NextResponse.json({ success: false, error: 'URL is required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'URL is required' }, { status: 400, headers: jsonHeaders(origin) });
     }
 
     // Validate URL
     try {
       new URL(url);
     } catch {
-      return NextResponse.json({ success: false, error: 'Invalid URL format' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Invalid URL format' }, { status: 400, headers: jsonHeaders(origin) });
     }
 
     const ytdlp = await getYtDlpPath();
@@ -228,10 +237,10 @@ export async function POST(req: NextRequest) {
         extractor: r.extractor,
       },
       qualities: ['1080p', '720p', '480p', '360p', 'audio'],
-    });
+    }, { headers: jsonHeaders(origin) });
   } catch (e: any) {
     console.error('[/api/info] Error:', e.message);
     const errorMessage = parseYtDlpError(e.message || 'Unknown error');
-    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
+    return NextResponse.json({ success: false, error: errorMessage }, { status: 500, headers: jsonHeaders(origin) });
   }
 }
