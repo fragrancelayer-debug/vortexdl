@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Download, Search, Clipboard, Loader2, AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video } from 'lucide-react';
+import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video } from 'lucide-react';
+import HamburgerMenu from './components/HamburgerMenu';
 
 type Quality = '1080p' | '720p' | '480p' | '360p' | 'audio';
 
@@ -16,7 +17,10 @@ const QUALITIES = [
 const PLATFORM_COLORS: Record<string, string> = {
   youtube: '#FF0000', instagram: '#E1306C', tiktok: '#69C9D0',
   twitter: '#1DA1F2', facebook: '#1877F2', vimeo: '#1AB7EA',
-  reddit: '#FF4500', twitch: '#9146FF', unknown: '#39ff14',
+  reddit: '#FF4500', twitch: '#9146FF',
+  pornhub: '#FF9000', xvideos: '#AE0000', xhamster: '#F5A623',
+  redtube: '#FF2626', spankbang: '#FF6B00', youporn: '#00AFF0',
+  unknown: '#39ff14',
 };
 
 export default function Home() {
@@ -68,10 +72,19 @@ export default function Home() {
     inputRef.current?.focus();
   }
 
+  const handlePlatformSelect = (platformUrl: string) => {
+    setUrl(platformUrl);
+    inputRef.current?.focus();
+  };
+
   const platformColor = info ? (PLATFORM_COLORS[info.platform] ?? '#39ff14') : '#39ff14';
+  const isAdultSite = info?.is_adult;
 
   return (
     <main className="min-h-screen flex flex-col items-center px-4 py-12">
+      {/* Hamburger Menu - Top Right */}
+      <HamburgerMenu onSelectPlatform={handlePlatformSelect} />
+
       <div className="mb-10 text-center">
         <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight" style={{ color: '#39ff14' }}>
           VORTEX<span style={{ color: '#e8e8e8' }}>DL</span>
@@ -117,10 +130,15 @@ export default function Home() {
             <div className="relative w-full" style={{ aspectRatio: '16/9', background: '#0a0a0a' }}>
               <img src={info.video.thumbnail} alt={info.video.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)' }} />
-              <div className="absolute bottom-3 left-3">
+              <div className="absolute bottom-3 left-3 flex items-center gap-2">
                 <span style={{ color: platformColor, borderColor: platformColor, background: 'rgba(0,0,0,0.6)', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '2px 8px', borderRadius: '4px', border: '1px solid', fontFamily: 'monospace' }}>
                   {info.platform}
                 </span>
+                {isAdultSite && (
+                  <span style={{ background: 'rgba(255,107,107,0.2)', color: '#ff6b6b', fontSize: '0.6rem', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: '3px', border: '1px solid rgba(255,107,107,0.4)', fontFamily: 'monospace' }}>
+                    18+
+                  </span>
+                )}
               </div>
               {info.video.duration !== '—' && (
                 <div className="absolute bottom-3 right-3 text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.75)', color: '#fff' }}>
