@@ -20,6 +20,7 @@ const PLATFORM_COLORS: Record<string, string> = {
   reddit: '#FF4500', twitch: '#9146FF',
   pornhub: '#FF9000', xvideos: '#AE0000', xhamster: '#F5A623',
   redtube: '#FF2626', spankbang: '#FF6B00', youporn: '#00AFF0',
+  hls: '#00c853', dash: '#2979ff',
   unknown: '#39ff14',
 };
 
@@ -79,6 +80,7 @@ export default function Home() {
 
   const platformColor = info ? (PLATFORM_COLORS[info.platform] ?? '#39ff14') : '#39ff14';
   const isAdultSite = info?.is_adult;
+  const isStreaming = info?.is_streaming;
 
   return (
     <main className="min-h-screen flex flex-col items-center px-4 py-12">
@@ -101,7 +103,7 @@ export default function Home() {
             value={url}
             onChange={e => setUrl(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleFetch()}
-            placeholder="Paste a video URL..."
+            placeholder="Paste any video, m3u8, or mpd URL..."
             className="flex-1 bg-transparent outline-none text-sm"
             style={{ color: '#e8e8e8', caretColor: '#39ff14' }}
           />
@@ -139,6 +141,11 @@ export default function Home() {
                     18+
                   </span>
                 )}
+                {isStreaming && (
+                  <span style={{ background: 'rgba(0,200,83,0.2)', color: '#00c853', fontSize: '0.6rem', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: '3px', border: '1px solid rgba(0,200,83,0.4)', fontFamily: 'monospace' }}>
+                   stream
+                  </span>
+                )}
               </div>
               {info.video.duration !== '—' && (
                 <div className="absolute bottom-3 right-3 text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.75)', color: '#fff' }}>
@@ -160,6 +167,20 @@ export default function Home() {
                 <ExternalLink size={11} />Source
               </a>
             </div>
+
+            {/* Streaming media info */}
+            {isStreaming && (
+              <div className="mt-4 p-4 rounded-xl text-xs"
+                style={{ background: 'rgba(0, 200, 83, 0.06)', border: '1px solid rgba(0, 200, 83, 0.2)' }}>
+                <div className="flex items-start gap-2">
+                  <Info size={14} style={{ color: '#00c853', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ color: '#888' }}>
+                    <p style={{ fontWeight: 500, color: '#00c853', marginBottom: 4 }}>Streaming media detected</p>
+                    <p>HLS/DASH streams will be downloaded and converted to MP4. This may take longer depending on stream duration.</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Adult site cookie warning */}
             {isAdultSite && (
