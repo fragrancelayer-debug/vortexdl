@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video } from 'lucide-react';
+import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Info, Shield, Cookie } from 'lucide-react';
 import HamburgerMenu from './components/HamburgerMenu';
 
 type Quality = '1080p' | '720p' | '480p' | '360p' | 'audio';
@@ -160,6 +160,44 @@ export default function Home() {
                 <ExternalLink size={11} />Source
               </a>
             </div>
+
+            {/* Adult site cookie warning */}
+            {isAdultSite && (
+              <div className="mt-4 p-4 rounded-xl text-xs space-y-3"
+                style={{
+                  background: info.cookies_available ? 'rgba(39, 255, 20, 0.06)' : 'rgba(255, 180, 60, 0.08)',
+                  border: info.cookies_available ? '1px solid rgba(39, 255, 20, 0.2)' : '1px solid rgba(255, 180, 60, 0.25)',
+                }}>
+                <div className="flex items-start gap-2">
+                  {info.cookies_available ? (
+                    <Shield size={14} style={{ color: '#39ff14', flexShrink: 0, marginTop: 1 }} />
+                  ) : (
+                    <AlertCircle size={14} style={{ color: '#ffb43c', flexShrink: 0, marginTop: 1 }} />
+                  )}
+                  <div>
+                    <p style={{ fontWeight: 500, color: info.cookies_available ? '#39ff14' : '#ffb43c', marginBottom: 4 }}>
+                      {info.cookies_available ? 'Cookies detected ✓' : 'Adult site — cookies required'}
+                    </p>
+                    {info.cookies_available ? (
+                      <p style={{ color: '#888' }}>
+                        Age verification enabled. If download fails, try refreshing your cookies.
+                      </p>
+                    ) : (
+                      <div style={{ color: '#888' }} className="space-y-2">
+                        <p>This video may require age verification. Without cookies, downloads will likely fail.</p>
+                        <div className="flex items-center gap-2 mt-2 p-2 rounded" style={{ background: 'rgba(255,180,60,0.1)' }}>
+                          <Cookie size={12} style={{ color: '#ffb43c' }} />
+                          <span style={{ color: '#aaa' }}>
+                            <strong>How to fix:</strong> Install "Get cookies.txt" extension, log into the site, export cookies to <code className="px-1 rounded" style={{ background: '#222' }}>cookies.txt</code>
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mt-5">
               <p className="text-xs mb-2" style={{ color: '#666' }}>SELECT QUALITY</p>
               <div className="flex flex-wrap gap-2">
