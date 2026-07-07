@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { existsSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 export const runtime = 'nodejs';
 const execFileAsync = promisify(execFile);
@@ -14,7 +16,6 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
-  'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
 ];
 
@@ -31,9 +32,22 @@ async function getYtDlpPath(): Promise<string> {
 }
 
 function getCookiesPath(): string | null {
-  const paths = ['/app/cookies.txt', './cookies.txt', '/tmp/cookies.txt', process.env.COOKIES_PATH, 'cookies.txt'].filter(Boolean) as string[];
+  const paths = [
+    './cookies.txt',
+    '/app/cookies.txt',
+    join(tmpdir(), 'vortexdl_cookies.txt'),
+    '/tmp/cookies.txt',
+    process.env.COOKIES_PATH,
+    'cookies.txt',
+  ].filter(Boolean) as string[];
+
   for (const p of paths) {
-    try { if (existsSync(p)) return p; } catch {}
+    try {
+      if (existsSync(p)) {
+        console.log(`[cookies] Found at: ${p}`);
+        return p;
+      }
+    } catch {}
   }
   return null;
 }
@@ -44,7 +58,7 @@ function isAdultSite(url: string): boolean {
 }
 
 function isStreamingMedia(url: string): boolean {
-  return /\.m3u8/i.test(url) || /\.mpd/i.test(url) || url.includes('m3u8') || url.includes('mpd') || url.includes('manifest') || url.includes('playlist.m3u8');
+  return /\.m3u8/i.test(url) || /\.mpd/i.test(url) || url.includes('m3u8') || url.includes('mpd');
 }
 
 function detectPlatform(url: string): string {
@@ -82,29 +96,6 @@ function fmtDur(s: number | null | undefined) {
   return `${m}:${String(sec).padStart(2,'0')}`;
 }
 
-function parseError(error: string, isAdult: boolean, hasCookies: boolean): string {
-  const e = error.toLowerCase();
-
-  if (isAdult && !hasCookies && (e.includes('403') || e.includes('forbidden') || e.includes('age') || e.includes('blocked'))) {
-    return '⚠️ Adult site requires cookies for verification. Add cookies.txt file.';
-  }
-
-  if (isAdult && hasCookies && (e.includes('403') || e.includes('forbidden'))) {
-    return '⚠️ Access denied. Cookies may have expired. Export fresh cookies from your browser.';
-  }
-
-  if (e.includes('403') || e.includes('forbidden')) return 'Access denied. The site may require authentication.';
-  if (e.includes('404') || e.includes('not found')) return 'Video not found. It may have been deleted.';
-  if (e.includes('age') || e.includes('verify')) return 'Age verification required. Cookies may be needed.';
-  if (e.includes('cloudflare')) return 'Cloudflare protection detected. Try again later.';
-  if (e.includes('geo') || e.includes('region')) return 'This video is geo-restricted.';
-  if (e.includes('private') || e.includes('unavailable')) return 'This video is private or unavailable.';
-  if (e.includes('unsupported url')) return 'Unsupported URL format. Check the link.';
-  if (e.includes('unable to extract')) return 'Could not extract video data. The site may have changed.';
-
-  return `Failed to fetch video info. Please check the URL.`;
-}
-
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin') || '*';
   const corsHeaders = {
@@ -114,8 +105,12 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const { url } = await req.json();
-    if (!url) return NextResponse.json({ success: false, error: 'URL required' }, { status: 400, headers: corsHeaders });
+    const body = await req.json();
+    const { url, cookies } = body;
+
+    if (!url) {
+      return NextResponse.json({ success: false, error: 'URL required' }, { status: 400, headers: corsHeaders });
+    }
 
     let urlObj: URL;
     try { urlObj = new URL(url); } catch {
@@ -125,16 +120,27 @@ export async function POST(req: NextRequest) {
     const ytdlp = await getYtDlpPath();
     const isAdult = isAdultSite(url);
     const isStreaming = isStreamingMedia(url);
-    const cookiesPath = getCookiesPath();
+    let cookiesPath = cookies ? null : getCookiesPath();
+
+    // Handle cookies from frontend
+    if (cookies && !cookiesPath) {
+      try {
+        const tmpCookiesPath = join(tmpdir(), 'vortexdl_cookies.txt');
+        writeFileSync(tmpCookiesPath, cookies, 'utf-8');
+        cookiesPath = tmpCookiesPath;
+        console.log(`[cookies] Saved to: ${tmpCookiesPath}`);
+      } catch (e) {
+        console.error('[cookies] Failed to save:', e);
+      }
+    }
+
     const userAgent = getRandomUserAgent();
 
     console.log(`[info] URL: ${url}`);
-    console.log(`[info] Platform: ${detectPlatform(url)}`);
-    console.log(`[info] Is adult: ${isAdult}`);
-    console.log(`[info] Is streaming media: ${isStreaming}`);
-    console.log(`[info] Cookies: ${cookiesPath || 'none'}`);
+    console.log(`[info] Platform: ${detectPlatform(url)} | Adult: ${isAdult} | Streaming: ${isStreaming}`);
+    console.log(`[info] Cookies: ${cookiesPath ? 'yes' : 'no'}`);
 
-    // Base arguments with anti-bot measures
+    // Base arguments with aggressive anti-bot measures
     const args = [
       '--dump-json',
       '--no-playlist',
@@ -143,19 +149,13 @@ export async function POST(req: NextRequest) {
       '--ignore-errors',
       '--user-agent', userAgent,
       '--age-limit', '99',
-      '--retries', '5',
+      '--retries', '3',
       '--socket-timeout', '30',
-      '--sleep-interval', '2',
-      '--max-sleep-interval', '5',
-      '--add-header', 'Accept=text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      '--add-header', 'Accept-Language=en-US,en;q=0.9,es;q=0.8',
-      '--add-header', 'Accept-Encoding=gzip, deflate, br',
-      '--add-header', 'DNT=1',
-      '--add-header', 'Connection=keep-alive',
-      '--add-header', 'Upgrade-Insecure-Requests=1',
+      '--sleep-interval', '1',
+      '--max-sleep-interval', '3',
     ];
 
-    // Cookies support
+    // Cookies
     if (cookiesPath) {
       args.push('--cookies', cookiesPath);
     }
@@ -163,24 +163,33 @@ export async function POST(req: NextRequest) {
     // Adult site headers
     if (isAdult) {
       args.push('--referer', `${urlObj.origin}/`);
-    }
-
-    // For streaming media (m3u8/mpd), allow direct URL processing
-    if (isStreaming) {
-      args.push('--no-check-certificates');
-      args.push('--prefer-insecure');
+      args.push('--add-header', 'Accept=text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+      args.push('--add-header', 'Accept-Language=en-US,en;q=0.9');
     }
 
     args.push(url);
 
-    console.log(`[info] Running yt-dlp...`);
-
-    const { stdout, stderr } = await execFileAsync(ytdlp, args, {
+    const { stdout } = await execFileAsync(ytdlp, args, {
       maxBuffer: 100 * 1024 * 1024,
-      timeout: 180000,
+      timeout: 120000,
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
     }).catch((err: any) => {
-      if (err.stdout) return { stdout: err.stdout, stderr: err.stderr || '' };
+      if (err.stdout) return { stdout: err.stdout };
+      const errMsg = err.message || 'Unknown error';
+
+      // Check if it's an adult site without cookies
+      if (isAdult && !cookiesPath) {
+        throw new Error('ADULT_NO_COOKIES');
+      }
+
+      // Parse specific errors
+      if (errMsg.includes('403') || errMsg.includes('forbidden')) {
+        throw new Error('ACCESS_DENIED');
+      }
+      if (errMsg.includes('404') || errMsg.includes('not found')) {
+        throw new Error('NOT_FOUND');
+      }
+
       throw err;
     });
 
@@ -192,43 +201,24 @@ export async function POST(req: NextRequest) {
         const jsonMatch = stdout.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           r = JSON.parse(jsonMatch[0]);
+        } else if (isStreaming) {
+          r = { id: 'stream', title: 'Streaming Media', webpage_url: url, extractor: 'direct' };
         } else {
-          // For direct media URLs, create minimal info
-          if (isStreaming) {
-            r = {
-              id: 'stream_' + Date.now(),
-              title: 'Streaming Media',
-              duration: null,
-              thumbnail: '',
-              webpage_url: url,
-              extractor: 'direct',
-            };
-          } else {
-            throw new Error('No JSON data in response');
-          }
+          throw new Error('PARSE_ERROR');
         }
       } else {
         r = JSON.parse(lines[0]);
       }
     } catch (parseErr) {
-      console.error('[error] Parse failed:', stdout.slice(0, 500));
-      // Try to continue with minimal info for direct URLs
       if (isStreaming) {
-        r = {
-          id: 'stream_' + Date.now(),
-          title: 'Streaming Media',
-          duration: null,
-          thumbnail: '',
-          webpage_url: url,
-          extractor: 'direct',
-        };
+        r = { id: 'stream', title: 'Streaming Media', webpage_url: url, extractor: 'direct' };
       } else {
-        throw new Error('Could not extract video data. The URL may be invalid or protected.');
+        throw new Error('PARSE_ERROR');
       }
     }
 
-    if (!r || !r.id) {
-      throw new Error('Invalid video data received');
+    if (!r) {
+      throw new Error('NO_DATA');
     }
 
     console.log(`[info] Success: ${r.title || 'Streaming Media'}`);
@@ -240,9 +230,9 @@ export async function POST(req: NextRequest) {
       is_streaming: isStreaming,
       cookies_available: !!cookiesPath,
       video: {
-        id: r.id,
+        id: r.id || 'unknown',
         title: r.title ?? 'Untitled',
-        thumbnail: r.thumbnail ?? r.thumbnails?.[0]?.url ?? '',
+        thumbnail: r.thumbnail ?? '',
         duration: fmtDur(r.duration),
         duration_sec: r.duration ?? 0,
         uploader: r.uploader ?? r.channel ?? '—',
@@ -258,11 +248,23 @@ export async function POST(req: NextRequest) {
 
   } catch (e: any) {
     console.error('[error]', e.message);
-    const url = typeof e.message === 'string' ? e.message : '';
-    const isAdult = isAdultSite(url);
+
+    let errorMsg = 'Failed to fetch video info. Please check the URL.';
+
+    if (e.message === 'ADULT_NO_COOKIES') {
+      errorMsg = '⚠️ Adult site requires cookies for age verification.\n\nHow to get cookies:\n1. Install "Get cookies.txt" extension\n2. Log into the site in your browser\n3. Click extension → Export cookies\n4. Paste cookies content below and retry';
+    } else if (e.message === 'ACCESS_DENIED') {
+      errorMsg = '⚠️ Access denied. The video requires authentication or may be private.';
+    } else if (e.message === 'NOT_FOUND') {
+      errorMsg = '⚠️ Video not found. It may have been deleted or the URL is incorrect.';
+    } else if (e.message === 'PARSE_ERROR' || e.message === 'NO_DATA') {
+      errorMsg = '⚠️ Could not extract video data. The site may have changed or requires login.';
+    }
+
     return NextResponse.json({
       success: false,
-      error: parseError(e.message || 'Unknown error', isAdult, !!getCookiesPath()),
+      error: errorMsg,
+      needs_cookies: e.message === 'ADULT_NO_COOKIES',
     }, { status: 500, headers: corsHeaders });
   }
 }

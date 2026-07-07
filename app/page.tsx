@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Info, Shield, Cookie } from 'lucide-react';
+import { Download, Search, Clipboard, Loader as Loader2, CircleAlert as AlertCircle, Eye, ThumbsUp, Clock, User, ExternalLink, Music, Video, Info, Shield, Cookie, X, Check } from 'lucide-react';
 import HamburgerMenu from './components/HamburgerMenu';
 
 type Quality = '1080p' | '720p' | '480p' | '360p' | 'audio';
@@ -31,20 +31,31 @@ export default function Home() {
   const [info, setInfo] = useState<any>(null);
   const [quality, setQuality] = useState<Quality>('720p');
   const [downloading, setDownloading] = useState(false);
+  const [showCookiesInput, setShowCookiesInput] = useState(false);
+  const [cookiesContent, setCookiesContent] = useState('');
+  const [cookiesSaved, setCookiesSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cookiesRef = useRef<HTMLTextAreaElement>(null);
 
   async function handleFetch() {
     if (!url.trim()) return;
-    setLoading(true); setError(''); setInfo(null);
+    setLoading(true); setError(''); setInfo(null); setCookiesSaved(false);
     try {
       const res = await fetch('/api/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: url.trim(), cookies: cookiesContent || undefined }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error ?? 'Unknown error');
+      if (!data.success) {
+        setError(data.error ?? 'Unknown error');
+        if (data.needs_cookies) {
+          setShowCookiesInput(true);
+        }
+        return;
+      }
       setInfo(data);
+      if (cookiesContent) setCookiesSaved(true);
     } catch (e: any) {
       setError(e.message ?? 'Failed to fetch video info');
     } finally {
@@ -55,14 +66,42 @@ export default function Home() {
   async function handleDownload() {
     if (!info) return;
     setDownloading(true);
-    const params = new URLSearchParams({ url: info.video.webpage_url, quality });
-    const a = document.createElement('a');
-    a.href = `/api/download?${params}`;
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => setDownloading(false), 2000);
+    try {
+      const res = await fetch('/api/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: info.video.webpage_url,
+          quality,
+          cookies: cookiesContent || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Download failed');
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = 'video.mp4';
+      if (disposition) {
+        const match = disposition.match(/filename\*=UTF-8''(.+)/);
+        if (match) filename = decodeURIComponent(match[1]);
+      }
+
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDownloading(false);
+    }
   }
 
   async function handlePaste() {
@@ -71,6 +110,14 @@ export default function Home() {
       setUrl(text);
     } catch {}
     inputRef.current?.focus();
+  }
+
+  async function handlePasteCookies() {
+    try {
+      const text = await navigator.clipboard.readText();
+      setCookiesContent(text);
+    } catch {}
+    cookiesRef.current?.focus();
   }
 
   const handlePlatformSelect = (platformUrl: string) => {
@@ -84,7 +131,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col items-center px-4 py-12">
-      {/* Hamburger Menu - Top Right */}
       <HamburgerMenu onSelectPlatform={handlePlatformSelect} />
 
       <div className="mb-10 text-center">
@@ -119,10 +165,74 @@ export default function Home() {
       </div>
 
       {error && (
-        <div className="w-full max-w-2xl mt-4 flex items-start gap-3 rounded-xl p-4 text-sm"
+        <div className="w-full max-w-2xl mt-4 rounded-xl p-4 text-sm"
           style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.3)', color: '#ff6b6b' }}>
-          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-          <span>{error}</span>
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span className="whitespace-pre-wrap">{error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Cookies Input Modal */}
+      {showCookiesInput && (
+        <div className="w-full max-w-2xl mt-4 rounded-xl overflow-hidden"
+          style={{ background: '#111', border: '1px solid rgba(255,180,60,0.3)' }}>
+          <div className="p-4 border-b" style={{ borderColor: 'rgba(255,180,60,0.2)' }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Cookie size={18} style={{ color: '#ffb43c' }} />
+                <span style={{ color: '#ffb43c', fontWeight: 500 }}>Add Cookies for Age Verification</span>
+              </div>
+              <button onClick={() => setShowCookiesInput(false)} className="p-1 hover:bg-white/5 rounded">
+                <X size={16} style={{ color: '#666' }} />
+              </button>
+            </div>
+          </div>
+          <div className="p-4">
+            <p className="text-xs mb-3" style={{ color: '#888' }}>
+              Paste your cookies.txt content below. Get cookies using "Get cookies.txt" browser extension while logged into the site.
+            </p>
+            <div className="relative">
+              <textarea
+                ref={cookiesRef}
+                value={cookiesContent}
+                onChange={e => setCookiesContent(e.target.value)}
+                placeholder={`# Netscape HTTP Cookie File
+.example.com  TRUE  /  FALSE  0  cookie_name  cookie_value
+...`}
+                className="w-full h-40 bg-[#0a0a0a] rounded-lg p-3 text-xs font-mono outline-none resize-none"
+                style={{ color: '#e8e8e8', border: '1px solid #222' }}
+              />
+              <button
+                onClick={handlePasteCookies}
+                className="absolute top-2 right-2 p-1.5 rounded hover:bg-white/5"
+                title="Paste from clipboard"
+              >
+                <Clipboard size={14} style={{ color: '#666' }} />
+              </button>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => { setShowCookiesInput(false); handleFetch(); }}
+                disabled={!cookiesContent.trim()}
+                className="flex-1 py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+                style={{
+                  background: cookiesContent.trim() ? '#ffb43c' : '#222',
+                  color: cookiesContent.trim() ? '#000' : '#666'
+                }}
+              >
+                <Check size={14} />Apply & Fetch
+              </button>
+              <button
+                onClick={() => { setCookiesContent(''); setShowCookiesInput(false); }}
+                className="px-4 py-2 rounded-lg text-sm"
+                style={{ background: '#222', color: '#888' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -143,7 +253,7 @@ export default function Home() {
                 )}
                 {isStreaming && (
                   <span style={{ background: 'rgba(0,200,83,0.2)', color: '#00c853', fontSize: '0.6rem', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: '3px', border: '1px solid rgba(0,200,83,0.4)', fontFamily: 'monospace' }}>
-                   stream
+                    stream
                   </span>
                 )}
               </div>
@@ -168,52 +278,39 @@ export default function Home() {
               </a>
             </div>
 
+            {/* Cookies status */}
+            {(isAdultSite || cookiesContent) && (
+              <div className="mt-4 p-3 rounded-lg text-xs flex items-center gap-2"
+                style={{
+                  background: cookiesSaved || info.cookies_available ? 'rgba(39, 255, 20, 0.06)' : 'rgba(255,180,60,0.08)',
+                  border: cookiesSaved || info.cookies_available ? '1px solid rgba(39, 255, 20, 0.2)' : '1px solid rgba(255,180,60,0.2)',
+                }}>
+                {cookiesSaved || info.cookies_available ? (
+                  <>
+                    <Check size={14} style={{ color: '#39ff14' }} />
+                    <span style={{ color: '#39ff14' }}>Cookies applied successfully</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle size={14} style={{ color: '#ffb43c' }} />
+                    <span style={{ color: '#ffb43c' }}>Adult site — cookies recommended</span>
+                    <button onClick={() => setShowCookiesInput(true)} className="ml-auto underline" style={{ color: '#ffb43c' }}>
+                      Add cookies
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Streaming media info */}
-            {isStreaming && (
+            {isStreaming && !isAdultSite && (
               <div className="mt-4 p-4 rounded-xl text-xs"
                 style={{ background: 'rgba(0, 200, 83, 0.06)', border: '1px solid rgba(0, 200, 83, 0.2)' }}>
                 <div className="flex items-start gap-2">
                   <Info size={14} style={{ color: '#00c853', flexShrink: 0, marginTop: 1 }} />
                   <div style={{ color: '#888' }}>
                     <p style={{ fontWeight: 500, color: '#00c853', marginBottom: 4 }}>Streaming media detected</p>
-                    <p>HLS/DASH streams will be downloaded and converted to MP4. This may take longer depending on stream duration.</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Adult site cookie warning */}
-            {isAdultSite && (
-              <div className="mt-4 p-4 rounded-xl text-xs space-y-3"
-                style={{
-                  background: info.cookies_available ? 'rgba(39, 255, 20, 0.06)' : 'rgba(255, 180, 60, 0.08)',
-                  border: info.cookies_available ? '1px solid rgba(39, 255, 20, 0.2)' : '1px solid rgba(255, 180, 60, 0.25)',
-                }}>
-                <div className="flex items-start gap-2">
-                  {info.cookies_available ? (
-                    <Shield size={14} style={{ color: '#39ff14', flexShrink: 0, marginTop: 1 }} />
-                  ) : (
-                    <AlertCircle size={14} style={{ color: '#ffb43c', flexShrink: 0, marginTop: 1 }} />
-                  )}
-                  <div>
-                    <p style={{ fontWeight: 500, color: info.cookies_available ? '#39ff14' : '#ffb43c', marginBottom: 4 }}>
-                      {info.cookies_available ? 'Cookies detected ✓' : 'Adult site — cookies required'}
-                    </p>
-                    {info.cookies_available ? (
-                      <p style={{ color: '#888' }}>
-                        Age verification enabled. If download fails, try refreshing your cookies.
-                      </p>
-                    ) : (
-                      <div style={{ color: '#888' }} className="space-y-2">
-                        <p>This video may require age verification. Without cookies, downloads will likely fail.</p>
-                        <div className="flex items-center gap-2 mt-2 p-2 rounded" style={{ background: 'rgba(255,180,60,0.1)' }}>
-                          <Cookie size={12} style={{ color: '#ffb43c' }} />
-                          <span style={{ color: '#aaa' }}>
-                            <strong>How to fix:</strong> Install "Get cookies.txt" extension, log into the site, export cookies to <code className="px-1 rounded" style={{ background: '#222' }}>cookies.txt</code>
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                    <p>HLS/DASH streams will be downloaded and converted to MP4.</p>
                   </div>
                 </div>
               </div>
@@ -232,7 +329,7 @@ export default function Home() {
             </div>
             <button onClick={handleDownload} disabled={downloading}
               className="neon-btn w-full mt-5 py-3 rounded-xl text-sm flex items-center justify-center gap-2">
-              {downloading ? <><Loader2 size={16} className="animate-spin" />Starting download…</> : <><Download size={16} />Download {quality === 'audio' ? 'MP3' : `${quality} MP4`}</>}
+              {downloading ? <><Loader2 size={16} className="animate-spin" />Downloading…</> : <><Download size={16} />Download {quality === 'audio' ? 'MP3' : `${quality} MP4`}</>}
             </button>
           </div>
         </div>
