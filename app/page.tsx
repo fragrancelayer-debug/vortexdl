@@ -160,6 +160,23 @@ export default function Home() {
                 <ExternalLink size={11} />Source
               </a>
             </div>
+
+            {/* Adult site cookie warning */}
+            {isAdultSite && !info.cookies_available && (
+              <div className="mt-4 flex items-start gap-3 p-3 rounded-lg text-xs"
+                style={{
+                  background: 'rgba(255, 180, 60, 0.08)',
+                  border: '1px solid rgba(255, 180, 60, 0.25)',
+                  color: '#ffb43c',
+                }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <p style={{ fontWeight: 500, marginBottom: '4px' }}>Adult site detected</p>
+                  <p style={{ opacity: 0.85 }}>This video may require age verification. Without a cookies.txt file, downloads may fail with "Video not found" errors.</p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-5">
               <p className="text-xs mb-2" style={{ color: '#666' }}>SELECT QUALITY</p>
               <div className="flex flex-wrap gap-2">

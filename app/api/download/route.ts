@@ -3,7 +3,7 @@ import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { createReadStream, unlink, statSync, existsSync } from 'fs';
+import { createReadStream, unlink, statSync, existsSync, mkdirSync } from 'fs';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -11,9 +11,10 @@ export const maxDuration = 300;
 const execFileAsync = promisify(execFile);
 
 const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
 ];
 
 function getRandomUserAgent(): string {
@@ -37,7 +38,7 @@ function getCookiesPath(): string | null {
 }
 
 function isAdultSite(url: string): boolean {
-  const patterns = [/pornhub\.com/i, /xvideos\.com/i, /xhamster\.com/i, /redtube\.com/i, /spankbang\.com/i, /youporn\.com/i, /xnxx\.com/i];
+  const patterns = [/pornhub\.com/i, /xvideos\.com/i, /xhamster\.com/i, /redtube\.com/i, /spankbang\.com/i, /youporn\.com/i, /xnxx\.com/i, /youjizz\.com/i, /tube8\.com/i];
   return patterns.some(p => p.test(url));
 }
 
@@ -54,15 +55,25 @@ function safeFilename(name: string, ext: string): string {
   return `${clean}.${ext}`;
 }
 
-function parseError(error: string): string {
+function parseError(error: string, isAdult: boolean, hasCookies: boolean): string {
   const e = error.toLowerCase();
-  if (e.includes('403') || e.includes('forbidden')) return 'Access denied. The site may require login or age verification.';
-  if (e.includes('404')) return 'Video not found.';
-  if (e.includes('age')) return 'Age verification required.';
-  if (e.includes('cloudflare')) return 'Cloudflare protection detected.';
+
+  if (isAdult && !hasCookies) {
+    if (e.includes('403') || e.includes('forbidden') || e.includes('age') || e.includes('denied')) {
+      return 'Adult site requires cookies for age verification. Please add a cookies.txt file with browser cookies.';
+    }
+  }
+
+  if (e.includes('403') || e.includes('forbidden')) return 'Access denied. The video may require authentication.';
+  if (e.includes('404') || e.includes('not found') || e.includes('does not exist')) return 'Video not found. It may have been deleted.';
+  if (e.includes('age')) return 'Age verification required. Cookies may be needed.';
+  if (e.includes('cloudflare')) return 'Cloudflare protection detected. Try again later.';
   if (e.includes('geo')) return 'This video is geo-restricted.';
-  if (e.includes('ffmpeg')) return 'Failed to process video. Ensure ffmpeg is installed.';
-  return 'Download failed. Please try again.';
+  if (e.includes('ffmpeg') || e.includes('merge')) return 'Failed to process video. FFmpeg may be missing.';
+  if (e.includes('requested format not available')) return 'Requested quality not available. Try another quality.';
+  if (e.includes('private') || e.includes('unavailable')) return 'Video is private or unavailable.';
+
+  return `Download failed: ${error.slice(0, 80)}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -77,10 +88,13 @@ export async function GET(req: NextRequest) {
   const url = searchParams.get('url');
   const quality = searchParams.get('quality') ?? '720p';
 
-  if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+  if (!url) {
+    return NextResponse.json({ error: 'URL is required' }, { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+  }
 
-  try { new URL(url); } catch {
-    return NextResponse.json({ error: 'Invalid URL' }, { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+  let urlObj: URL;
+  try { urlObj = new URL(url); } catch {
+    return NextResponse.json({ error: 'Invalid URL format' }, { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   }
 
   const isAudio = quality === 'audio';
@@ -92,55 +106,122 @@ export async function GET(req: NextRequest) {
   const cookiesPath = getCookiesPath();
   const userAgent = getRandomUserAgent();
 
+  const tmpDir = join(tmpdir(), 'vortexdl');
+  if (!existsSync(tmpDir)) {
+    try { mkdirSync(tmpDir, { recursive: true }); } catch {}
+  }
+
   try {
-    const commonArgs = ['--no-playlist', '--no-warnings', '--no-check-certificates', '--user-agent', userAgent, '--age-limit', '99'];
-    if (cookiesPath) commonArgs.push('--cookies', cookiesPath);
-    if (isAdult) {
-      const urlObj = new URL(url);
-      commonArgs.push('--referer', `${urlObj.protocol}//${urlObj.hostname}/`);
+    const commonArgs = [
+      '--no-playlist',
+      '--no-warnings',
+      '--no-check-certificates',
+      '--user-agent', userAgent,
+      '--age-limit', '99',
+      '--retries', '3',
+      '--socket-timeout', '60',
+      '--ignore-errors',
+    ];
+
+    if (cookiesPath) {
+      commonArgs.push('--cookies', cookiesPath);
     }
 
-    const { stdout: titleOut } = await execFileAsync(ytdlp, [...commonArgs, '--get-title', url], { maxBuffer: 10 * 1024 * 1024, timeout: 30000 });
+    if (isAdult) {
+      commonArgs.push('--referer', `${urlObj.protocol}//${urlObj.hostname}/`);
+      commonArgs.push('--extractor-args', `http:default_headers=Accept=*/*,Accept-Language=en-US,en;q=0.9,Referer=${urlObj.origin}/`);
+    }
+
+    const { stdout: titleOut } = await execFileAsync(ytdlp, [...commonArgs, '--get-title', url], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60000,
+    }).catch((err: any) => {
+      if (err.stdout) return { stdout: err.stdout };
+      throw err;
+    });
+
     const title = titleOut.trim().split('\n')[0] ?? 'video';
     const filename = safeFilename(title, ext);
-    const tmpFile = join(tmpdir(), `vortexdl_${Date.now()}.${ext}`);
+    const tmpFile = join(tmpDir, `vortexdl_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`);
 
     const dlArgs = isAudio
       ? [...commonArgs, '-f', formatArg, '-x', '--audio-format', 'mp3', '--audio-quality', '0', '-o', tmpFile, url]
       : [...commonArgs, '-f', formatArg, '--merge-output-format', 'mp4', '-o', tmpFile, url];
 
     const stderrOutput: string[] = [];
+    const stdoutOutput: string[] = [];
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ytdlp, dlArgs);
+      const proc = spawn(ytdlp, dlArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      proc.stdout.on('data', (d: Buffer) => stdoutOutput.push(d.toString()));
       proc.stderr.on('data', (d: Buffer) => stderrOutput.push(d.toString()));
-      proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderrOutput.join('') || `Exit ${code}`)));
-      proc.on('error', (e) => reject(new Error(`Failed to start: ${e.message}`)));
+
+      const timeout = setTimeout(() => {
+        proc.kill();
+        reject(new Error('Download timeout after 5 minutes'));
+      }, 300000);
+
+      proc.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve();
+        } else {
+          const errorOutput = stderrOutput.join('');
+          reject(new Error(errorOutput || `yt-dlp exited with code ${code}`));
+        }
+      });
+
+      proc.on('error', (e) => {
+        clearTimeout(timeout);
+        reject(new Error(`Failed to start yt-dlp: ${e.message}`));
+      });
     });
 
+    if (!existsSync(tmpFile)) {
+      throw new Error('Download file was not created. The video may be unavailable.');
+    }
+
     const fileSize = statSync(tmpFile).size;
+    if (fileSize === 0) {
+      unlink(tmpFile, () => {});
+      throw new Error('Downloaded file is empty. The video may be protected.');
+    }
+
     const nodeStream = createReadStream(tmpFile);
     const webStream = new ReadableStream({
       start(controller) {
         nodeStream.on('data', (chunk) => controller.enqueue(new Uint8Array(chunk as Buffer)));
-        nodeStream.on('end', () => { controller.close(); unlink(tmpFile, () => {}); });
-        nodeStream.on('error', (e) => { controller.error(e); unlink(tmpFile, () => {}); });
+        nodeStream.on('end', () => {
+          controller.close();
+          unlink(tmpFile, () => {});
+        });
+        nodeStream.on('error', (e) => {
+          controller.error(e);
+          unlink(tmpFile, () => {});
+        });
       },
-      cancel() { nodeStream.destroy(); unlink(tmpFile, () => {}); },
+      cancel() {
+        nodeStream.destroy();
+        unlink(tmpFile, () => {});
+      },
     });
 
     return new NextResponse(webStream, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
         'Content-Length': String(fileSize),
         'Cache-Control': 'no-cache',
         ...corsHeaders,
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: parseError(e.message) }, { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    console.error('[/api/download] Error:', e.message);
+    return NextResponse.json({
+      error: parseError(e.message || 'Unknown error', isAdult, !!cookiesPath),
+    }, { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   }
 }
 
